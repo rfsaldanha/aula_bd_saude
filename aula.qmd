@@ -1,0 +1,176 @@
+---
+title: "AvaliaSUS: Banco de dados e análises"
+format: html
+---
+
+## Pacotes
+
+```{r}
+library(tidyverse)
+library(microdatasus)
+library(duckdb)
+library(DBI)
+```
+
+## Download de dados
+
+```{r}
+sinasc_raw <- fetch_datasus(
+  year_start = 2023,
+  year_end = 2023,
+  uf = "ES",
+  information_system = "SINASC",
+  timeout = 1000
+)
+
+sinasc_p <- process_sinasc(sinasc_raw)
+
+sinasc_p
+```
+
+## Conexão com o banco de dados
+
+```{r}
+con <- dbConnect(duckdb(), "banco.duckdb")
+```
+
+## Escrever os dados no banco
+
+```{r}
+dbWriteTable(conn = con, name = "sinasc", value = sinasc_p)
+rm(sinasc_p)
+```
+
+## Consulta direta no banco de dados
+
+```{r}
+res <- dbGetQuery(con, "SELECT * FROM sinasc LIMIT 100") |>
+  tibble()
+
+res
+```
+
+## Abstração da tabela no banco de dados
+
+```{r}
+tab_sinasc <- tbl(con, "sinasc")
+```
+
+## Uso da tabela com verbos do dplyr
+
+Nascimentos fora do hospital.
+```{r}
+tab_sinasc |>
+  filter(LOCNASC != "Hospital") |>
+  collect()
+```
+
+
+Nascimentos de mães com 16 anos ou menos.
+```{r}
+tab_sinasc |>
+  mutate(IDADEMAE = as.numeric(IDADEMAE)) |>
+  filter(IDADEMAE <= 16) |>
+  collect()
+```
+
+Estado civil das mães com 16 anos ou menos.
+```{r}
+tab_sinasc |>
+  mutate(IDADEMAE = as.numeric(IDADEMAE)) |>
+  filter(IDADEMAE <= 16) |>
+  collect() |>
+  group_by(ESTCIVMAE) |>
+  summarise(freq = n()) |>
+  ungroup()
+```
+
+Raça/cor das mães com 16 anos ou menos.
+```{r}
+tab_sinasc |>
+  mutate(IDADEMAE = as.numeric(IDADEMAE)) |>
+  filter(IDADEMAE <= 16) |>
+  collect() |>
+  group_by(RACACORMAE) |>
+  summarise(freq = n()) |>
+  ungroup()
+```
+
+Cidade de residência e cidade do parto
+```{r}
+tab_sinasc |>
+  filter(CODMUNRES != CODMUNNASC) |>
+  group_by(CODMUNRES, CODMUNNASC) |>
+  summarise(freq = n()) |>
+  ungroup() |>
+  arrange(-freq) |>
+  collect()
+```
+
+## Uma análise sobre parto cesariano e vaginal
+
+Quantidade de partos por tipo
+```{r}
+tab_sinasc |>
+  group_by(PARTO) |>
+  summarise(freq = n()) |>
+  ungroup()
+```
+
+Tipo de parto e raça/cor
+```{r}
+tab_sinasc |>
+  mutate(
+    raca = case_match(
+      RACACORMAE,
+      "Branca" ~ "Branca",
+      .default = "Não branca"
+    )
+  ) |>
+  group_by(raca, PARTO) |>
+  summarise(freq = n()) |>
+  ungroup() |>
+  arrange(raca, PARTO) |>
+  collect()
+```
+
+Dia da semana do parto.
+```{r}
+tab_sinasc |>
+  filter(LOCNASC == "Hospital") |>
+  mutate(DTNASC = as_date(DTNASC)) |>
+  collect() |>
+  mutate(dia_semana = wday(DTNASC, week_start = 1, label = TRUE)) |>
+  group_by(PARTO, dia_semana) |>
+  summarise(freq = n()) |>
+  ungroup() |>
+  print(n = 14)
+```
+
+Hora do parto
+ ```{r}
+tab_sinasc |>
+  filter(LOCNASC == "Hospital") |>
+  select(PARTO, DTNASC, HORANASC) |>
+  collect() |>
+  mutate(
+    data_hora = as_datetime(paste(DTNASC, HORANASC), format = "%Y-%m-%d %H%M")
+  ) |>
+  mutate(
+    turno = case_when(
+      hour(data_hora) < 6 ~ "Madrugada",
+      hour(data_hora) >= 6 & hour(data_hora) < 12 ~ "Manhã",
+      hour(data_hora) >= 12 & hour(data_hora) < 18 ~ "Tarde",
+      hour(data_hora) >= 18 ~ "Noite"
+    )
+  ) |>
+  group_by(PARTO, turno) |>
+  summarise(freq = n()) |>
+  ungroup()
+ ```
+
+## Desconectar do banco de dados
+
+```{r}
+dbDisconnect(con)
+```
