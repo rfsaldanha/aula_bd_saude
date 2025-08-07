@@ -6,10 +6,38 @@ format: html
 ## Pacotes
 
 ```{r}
+# install.packages("tidyverse")
 library(tidyverse)
+# https://rfsaldanha.github.io/microdatasus/
 library(microdatasus)
 library(duckdb)
 library(DBI)
+```
+
+## Revisão de R
+
+```{r}
+# R como calculadora
+2 + 2
+2 * 10
+2^10
+
+# Objetos
+x <- 2
+x + 10^2
+
+# Funções
+# Vetor, conjunto de valores
+x <- c(10, 23, 34, 12, 1)
+
+sqrt(9) # Raiz quadrado
+
+# Funções de estatística básica
+mean(x) # Média
+median(x) # Mediana
+sd(x) # Desvio padrão
+var(x) # Variância
+quantile(x) # Quartis
 ```
 
 ## Download de dados
@@ -30,6 +58,8 @@ sinasc_p
 
 ## Conexão com o banco de dados
 
+Exemplos de sistemas de banco de dados: MySQL, Postgres, Oracle.
+
 ```{r}
 con <- dbConnect(duckdb(), "banco.duckdb")
 ```
@@ -42,6 +72,8 @@ rm(sinasc_p)
 ```
 
 ## Consulta direta no banco de dados
+
+Linguagem SQL, serial query language.
 
 ```{r}
 res <- dbGetQuery(con, "SELECT * FROM sinasc LIMIT 100") |>
@@ -64,7 +96,6 @@ tab_sinasc |>
   filter(LOCNASC != "Hospital") |>
   collect()
 ```
-
 
 Nascimentos de mães com 16 anos ou menos.
 ```{r}
@@ -168,6 +199,18 @@ tab_sinasc |>
   summarise(freq = n()) |>
   ungroup()
  ```
+
+Quantidade de partos por tipo e data
+```{r}
+tab_sinasc |>
+  mutate(DTNASC = as_date(DTNASC)) |>
+  group_by(DTNASC, PARTO) |>
+  summarise(freq = n()) |>
+  ungroup() |>
+  collect() |>
+  ggplot(aes(x = DTNASC, y = freq, col = PARTO)) +
+  geom_line()
+```
 
 ## Desconectar do banco de dados
 
